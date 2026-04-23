@@ -58,12 +58,12 @@ describe('FilterService', () => {
     service = new FilterService()
   })
 
-  it('returns no-match when missing 2+ required requirements', () => {
+  it('returns no-match when enough required requirements are missing (ratio 0.6 on 2 required → limit 2)', () => {
     const cv = baseCV(['Built applications with Python'])
     const result = service.filter(cv, reqs)
     expect(result.preliminaryTier).toBe('no-match')
     expect(result.missingRequiredCount).toBe(2)
-    expect(result.eliminationReason).toBeDefined()
+    expect(result.eliminationReason).toContain('required')
   })
 
   it('returns great when all required are strongly matched', () => {

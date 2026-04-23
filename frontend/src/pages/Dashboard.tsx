@@ -11,6 +11,7 @@ import { CircleDollarSign, FileText, Loader2 } from 'lucide-react'
 import { jobPositionsApi } from '../api/endpoints'
 import {
   JobPosition,
+  JobPositionStatus,
   PipelineStage,
   Requirement,
   ResultsResponse,
@@ -34,15 +35,17 @@ export default function Dashboard() {
   const queryClient = useQueryClient()
   const [searchParams, setSearchParams] = useSearchParams()
 
-  // Polls every 2s while any row is mid-extraction so "Extracting…" flips without a manual refresh.
+  // Polls every 2s while any row is mid-extraction or processing so pills flip without a manual refresh.
   const jobsQuery = useQuery({
     queryKey: ['jobPositions'],
     queryFn: jobPositionsApi.list,
     refetchInterval: (query) => {
-      const hasExtracting = (query.state.data ?? []).some(
-        (j) => j.status === 'EXTRACTING_REQUIREMENTS',
+      const hasActive = (query.state.data ?? []).some(
+        (j) =>
+          j.status === 'EXTRACTING_REQUIREMENTS' ||
+          j.status === 'PROCESSING',
       )
-      return hasExtracting ? 2000 : false
+      return hasActive ? 2000 : false
     },
   })
 
@@ -85,11 +88,10 @@ export default function Dashboard() {
   const progressStatus = progressQuery.data?.status
   useEffect(() => {
     if (progressStatus === 'COMPLETED' || progressStatus === 'FAILED') {
-      resultsQuery.refetch()
+      queryClient.invalidateQueries({ queryKey: ['results', selectedId] })
       queryClient.invalidateQueries({ queryKey: ['jobPositions'] })
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [progressStatus, selectedId])
+  }, [progressStatus, selectedId, queryClient])
 
   const [editingJob, setEditingJob] = useState<JobPosition | null>(null)
   const [deletingJob, setDeletingJob] = useState<JobPosition | null>(null)
@@ -121,14 +123,17 @@ export default function Dashboard() {
     onSuccess: (_data, vars) => {
       queryClient.invalidateQueries({ queryKey: ['jobPositions'] })
       queryClient.invalidateQueries({ queryKey: ['results', vars.id] })
+      // Wake up the progress poll so it sees the rescore's PROCESSING flip.
+      queryClient.invalidateQueries({ queryKey: ['progress', vars.id] })
       setEditingJob(null)
     },
   })
 
   const retryExtractionMutation = useMutation({
     mutationFn: (id: string) => jobPositionsApi.extractRequirements(id),
-    onSuccess: () => {
+    onSuccess: (_data, id) => {
       queryClient.invalidateQueries({ queryKey: ['jobPositions'] })
+      queryClient.invalidateQueries({ queryKey: ['progress', id] })
     },
   })
 
@@ -189,6 +194,7 @@ export default function Dashboard() {
               <SelectedJobPane
                 jobPositionId={selectedId}
                 resultsQuery={resultsQuery}
+                liveStatus={progressQuery.data?.status ?? null}
                 livePipelineStage={progressQuery.data?.currentStage ?? null}
               />
             ) : (
@@ -267,10 +273,12 @@ function EmptyState() {
 function SelectedJobPane({
   jobPositionId,
   resultsQuery,
+  liveStatus,
   livePipelineStage,
 }: {
   jobPositionId: string
   resultsQuery: UseQueryResult<ResultsResponse>
+  liveStatus: JobPositionStatus | null
   livePipelineStage: PipelineStage | null
 }) {
   if (resultsQuery.isLoading || !resultsQuery.data) {
@@ -284,7 +292,10 @@ function SelectedJobPane({
   const { jobPosition, ranked } = resultsQuery.data
   const requirements = jobPosition.requirements as Requirement[]
   const allCvs = [...ranked.great, ...ranked.good, ...ranked.noMatch]
-  const isProcessing = jobPosition.status === 'PROCESSING'
+  // Prefer the frequently-polled /progress status over the heavy results payload
+  // so the spinner/pill flip the moment the pipeline finishes.
+  const effectiveStatus = liveStatus ?? jobPosition.status
+  const isProcessing = effectiveStatus === 'PROCESSING'
   const stageLabel =
     STAGE_LABELS[livePipelineStage ?? jobPosition.currentStage ?? 'parsing']
 
@@ -296,7 +307,7 @@ function SelectedJobPane({
             <h2 className="truncate text-base font-semibold text-gray-900">
               {jobPosition.title}
             </h2>
-            <JobStatusPill status={jobPosition.status} />
+            <JobStatusPill status={effectiveStatus} />
           </div>
           <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-500">
             <span className="inline-flex items-center gap-1.5">

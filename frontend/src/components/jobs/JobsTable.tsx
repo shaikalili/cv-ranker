@@ -37,6 +37,11 @@ export default function JobsTable({
             // Retry is safe — backend's extractRequirements is idempotent on CREATED/FAILED.
             const needsExtraction =
               job.status === 'CREATED' || job.status === 'FAILED'
+            // Only expose Upload once requirements exist; backend rejects otherwise.
+            const canUpload =
+              job.status === 'REQUIREMENTS_EXTRACTED' ||
+              job.status === 'PROCESSING' ||
+              job.status === 'COMPLETED'
             return (
               <tr
                 key={job.id}
@@ -72,15 +77,17 @@ export default function JobsTable({
                         <RefreshCw className="h-4 w-4" strokeWidth={1.75} />
                       </IconButton>
                     )}
-                    <IconButton
-                      label="Upload CVs"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        onUploadCvs(job)
-                      }}
-                    >
-                      <Upload className="h-4 w-4" strokeWidth={1.75} />
-                    </IconButton>
+                    {canUpload && (
+                      <IconButton
+                        label="Upload CVs"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          onUploadCvs(job)
+                        }}
+                      >
+                        <Upload className="h-4 w-4" strokeWidth={1.75} />
+                      </IconButton>
+                    )}
                     <IconButton
                       label="Edit requirements"
                       onClick={(e) => {

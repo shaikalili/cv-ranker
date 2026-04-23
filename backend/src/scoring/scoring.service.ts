@@ -21,14 +21,14 @@ export interface ScoringResult {
 
 @Injectable()
 export class ScoringService {
-  // Precision stage — stricter than FilterService because AI scores are fine-grained.
+  // Precision stage — stricter thresholds than FilterService because AI scores
+  // are fine-grained. Required-weight multiplier in `weightedScore` already
+  // penalises missed must-haves proportionally, so no flat penalty is applied.
   private static readonly TIER_THRESHOLDS: TierThresholds = {
     great: 85,
     good: 60,
-    maxMissingRequired: 3,
+    missingRequiredRatio: 0.5,
   }
-
-  private static readonly MISSING_REQUIRED_PENALTY = 7
 
   private static readonly AI_MISSING_THRESHOLD = 0.5
 
@@ -45,15 +45,15 @@ export class ScoringService {
       scoreFor,
       (score) => score < ScoringService.AI_MISSING_THRESHOLD,
     )
+    const totalRequired = requirements.filter((r) => r.isRequired).length
 
     const baseScore = weightedScore(requirements, scoreFor)
-    const penalty =
-      missingRequiredCount * ScoringService.MISSING_REQUIRED_PENALTY
-    const finalScore = Math.max(0, baseScore - penalty)
+    const finalScore = Math.max(0, Math.round(baseScore))
 
     const tier = assignTier(
       finalScore,
       missingRequiredCount,
+      totalRequired,
       ScoringService.TIER_THRESHOLDS,
     )
 

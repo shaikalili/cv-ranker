@@ -26,10 +26,11 @@ export interface FilterResult {
 export class FilterService {
   private static readonly MULTI_MATCH_THRESHOLD = 3
 
+  // Keyword stage is intentionally lenient — the AI stage is the precision gate.
   private static readonly TIER_THRESHOLDS: TierThresholds = {
     great: 70,
     good: 40,
-    maxMissingRequired: 5,
+    missingRequiredRatio: 0.6,
   }
 
   filter(cv: ParsedCV, requirements: Requirement[]): FilterResult {
@@ -50,11 +51,13 @@ export class FilterService {
       scoreFor,
       (score) => score === 0,
     )
+    const totalRequired = requirements.filter((r) => r.isRequired).length
 
     const preliminaryScore = weightedScore(requirements, scoreFor)
     const tier = assignTier(
       preliminaryScore,
       missingRequiredCount,
+      totalRequired,
       FilterService.TIER_THRESHOLDS,
     )
 
@@ -65,7 +68,11 @@ export class FilterService {
       preliminaryTier: tier,
       eliminationReason:
         tier === 'no-match'
-          ? this.buildEliminationReason(missingRequiredCount, preliminaryScore)
+          ? this.buildEliminationReason(
+              missingRequiredCount,
+              totalRequired,
+              preliminaryScore,
+            )
           : undefined,
     }
   }
@@ -94,10 +101,16 @@ export class FilterService {
 
   private buildEliminationReason(
     missingRequired: number,
+    totalRequired: number,
     score: number,
   ): string {
-    if (missingRequired >= FilterService.TIER_THRESHOLDS.maxMissingRequired) {
-      return `Missing ${missingRequired} required requirements`
+    if (totalRequired > 0) {
+      const limit = Math.ceil(
+        totalRequired * FilterService.TIER_THRESHOLDS.missingRequiredRatio,
+      )
+      if (missingRequired >= limit) {
+        return `Missing ${missingRequired} of ${totalRequired} required requirements`
+      }
     }
     return `Score too low (${score.toFixed(1)}/100)`
   }

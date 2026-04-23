@@ -86,6 +86,26 @@ export default function UploadCvs() {
   }
 
   const job = jobQuery.data
+  const isReady =
+    job.status === 'REQUIREMENTS_EXTRACTED' ||
+    job.status === 'PROCESSING' ||
+    job.status === 'COMPLETED'
+
+  if (!isReady) {
+    return (
+      <div className="mx-auto max-w-2xl rounded-xl border border-yellow-200 bg-yellow-50 p-6 text-yellow-800">
+        Requirements aren't ready yet for{' '}
+        <strong>{job.title}</strong>. You'll be able to upload CVs once
+        extraction finishes.
+        <Link
+          to={`/dashboard?jobId=${job.id}`}
+          className="ml-2 font-medium underline"
+        >
+          Back to dashboard
+        </Link>
+      </div>
+    )
+  }
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
