@@ -1,0 +1,83 @@
+generator client {
+  provider      = "prisma-client-js"
+  // `native` covers local dev; `linux-musl-openssl-3.0.x` is required when
+  // running inside node:20-alpine (Docker), which ships OpenSSL 3.
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String        @id @default(cuid())
+  email        String        @unique
+  password     String
+  name         String
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  jobPositions JobPosition[]
+
+  @@map("users")
+}
+
+model JobPosition {
+  id                 String            @id @default(cuid())
+  userId             String
+  user               User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title              String
+  jobDescriptionText String            @db.Text
+  requirements       Json
+  status             JobPositionStatus @default(CREATED)
+  totalCvs           Int               @default(0)
+  processedCvs       Int               @default(0)
+  greatMatchCount    Int               @default(0)
+  goodMatchCount     Int               @default(0)
+  noMatchCount       Int               @default(0)
+  aiCostUsd          Float             @default(0)
+  // Coarse pipeline phase for poll-based progress UX.
+  // NULL between runs; one of 'parsing' | 'filtering' | 'scoring' | 'completed' | 'failed'.
+  currentStage       String?
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+  cvs                CV[]
+
+  @@index([userId])
+  @@map("job_positions")
+}
+
+enum JobPositionStatus {
+  CREATED
+  EXTRACTING_REQUIREMENTS
+  REQUIREMENTS_EXTRACTED
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+model CV {
+  id                String      @id @default(cuid())
+  jobPositionId     String
+  jobPosition       JobPosition @relation(fields: [jobPositionId], references: [id], onDelete: Cascade)
+  originalFilename  String
+  mimeType          String
+  rawText           String      @db.Text
+  anonymizedText    String      @db.Text
+  sections          Json
+  sentences         Json
+  entities          Json
+  parsingConfidence String
+  keywordScores     Json
+  aiScores          Json?
+  finalScore        Float?
+  tier              String?
+  eliminationReason String?
+  aiModelUsed       String?
+  aiCostUsd         Float       @default(0)
+  createdAt         DateTime    @default(now())
+
+  @@index([jobPositionId])
+  @@index([tier])
+  @@map("cvs")
+}
